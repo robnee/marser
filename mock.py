@@ -145,23 +145,13 @@ class Port:
     def close(self):
         pass
 
-    # This is the API
-    def host_in_waiting(self) -> int:
-        return len(self.outq)
 
-    def host_read(self, num_bytes: int = 1) -> bytes:
-        ret = self.outq.read(num_bytes)
-        if not ret:
-            raise EOFError
+class HostPort(Port):
+    """create a host-side port for the mock to talk to the client"""
 
-        return ret
-
-    def host_readline(self):
-        return self.outq.readline()
-
-    def host_write(self, data: bytes):
-        # add bytes to the inq
-        self.inq.write(data)
+    def __init__(self, port):
+        self.inq = port.outq
+        self.outq = port.inq
 
 
 class Proc:
@@ -169,19 +159,20 @@ class Proc:
 
     def __init__(self, port: Port):
         self.port = port
+        self.host_port = HostPort(port)
 
     def reset(self):
         """reset host"""
         logging.info(f'Proc reset: {self.port.inq} out: {self.port.outq}')
 
     def ser_avail(self) -> int:
-        return self.port.host_in_waiting()
+        return self.host_port.in_waiting
 
-    def ser_read(self) -> bytes:
-        return self.port.host_read()
+    def ser_read(self, num_bytes: int = 1) -> bytes:
+        return self.host_port.read(num_bytes)
 
     def ser_readline(self) -> bytes:
-        return self.port.host_readline()
+        return self.host_port.readline()
 
     def ser_read_word(self) -> int:
         low = self.ser_read()
@@ -189,7 +180,7 @@ class Proc:
         return int.from_bytes(low + high, byteorder='little')
 
     def ser_write(self, data: bytes):
-        self.port.host_write(data)
+        self.host_port.write(data)
 
 
 class Gcode:
@@ -200,70 +191,9 @@ class MarlinProc(Proc):
     """
     ;   Commands:
     ;
-    ;   C [CHK]
-    ;   Reads a page of config memory, idlocs, chip id, config and calibration words
+    ;   Gnnn
     ;
-    ;   I [CHK]
-    ;   Reports bootloader interface version [1 byte], page of bootloader start
-    ;   address, page of bootloader end address, and page of start of eeprom address.
-    ;   4 bytes total.
-    ;
-    ;   R [ADR] [CHK]
-    ;   Reads a page of flash program memory.  The command is 4 bytes long, 1 byte
-    ;   for the command character 'R', two for the address and 1 checksum byte.
-    ;   This command returns [DATA] followed by [CHK] (65 bytes total)
-    ;
-    ;   W [ADR] [DATA] [CHK]
-    ;   Writes a page to flash program memory.  The command is 68 bytes long, 1 byte
-    ;   for the command character 'W', two for the address, a 64 byte data frame and
-    ;   a checksum byte.
-    ;
-    ;   E [ADR] [CHK]
-    ;   Erases a page of flash program memory.  The command is 4 bytes long, 1 byte
-    ;   for the command character 'E', two for the address and 1 checksum byte.
-    ;
-    ;   D [ADR] [DATA] [CHK]
-    ;   Write a page of flash data memory.  The command is 68 bytes long, 1 byte
-    ;   for the command character 'D', two for the address, a 64 byte data frame and
-    ;   a checksum byte.  Hex files generally choose a high address to represent
-    ;   data memory but the boot loader expects the address in the low byte of address
-    ;   and a zero in the high byte.
-    ;
-    ;   F [ADR] [CHK]
-    ;   Reads a page of flash data memory.  The command is 4 bytes long, 1 byte
-    ;   for the command character 'F', two for the address and 1 checksum byte.
-    ;   the high byte of the address is ignored.
-    ;   This command returns [DATA] followed by [CHK] (65 bytes total)
-    ;   Where:
-    ;
-    ;   T [ADR] [CHK]
-    ;   Test address is writable, i.e. not a protected bootloader address  Does not
-    ;   test if address is out of range.
-    ;   This command responds with the (K) prompt if address is writable and (R) if
-    ;   address is restricted.
-    ;
-    ;   Z
-    ;   Resets the processor
-    ;
-    ;   [ADR] - The address is two bytes long and is sent low byte first.  The range
-    ;   of address (for the 16F819) is 0x0000 - 0x07FF for Read and 0x0020 - 0x06FF
-    ;   for read and write.
-    ;
-    ;   [CHK] - A simple checksum of the databytes transmitted for error checking
-    ;   When appended to commands the checksum EXCLUDES the first command byte.
-    ;
-    ;   [DATA] - represents an entire page of flash program memory.  The page is
-    ;   organized as 32 low byte/high byte pairs.
-    ;
-    ;   Return Codes:
-    ;   K - Ready to accept the next command
-    ;   R - Address range error
-    ;   C - Data checksum error
-    ;   E - Invalid command
-    ;
-    ;   When a command complete successfully the 'K' prompt will be all that is
-    ;   sent.  There is no success code.  The absense of a R or C error code is
-    ;   enough to indicate success.
+    ;   Mnnn
     ;
     """
 
