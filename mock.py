@@ -85,6 +85,15 @@ class Port:
         """reset the port.  typically overridden by Host"""
         self._clear()
 
+    def get_host_port(self):
+        """create a host-side port for the mock to talk to the client"""
+
+        host_port = Port()
+        host_port.inq = self.outq
+        host_port.outq = self.inq
+
+        return host_port
+
     @property
     def port(self):
         return 'mock'
@@ -146,20 +155,12 @@ class Port:
         pass
 
 
-class HostPort(Port):
-    """create a host-side port for the mock to talk to the client"""
-
-    def __init__(self, port):
-        self.inq = port.outq
-        self.outq = port.inq
-
-
 class Proc:
     """base class for simulated host processors"""
 
     def __init__(self, port: Port):
         self.port = port
-        self.host_port = HostPort(port)
+        self.host_port = port.get_host_port()
 
     def reset(self):
         """reset host"""
@@ -197,24 +198,44 @@ class MarlinProc(Proc):
     ;
     """
 
-    def __init__(self, port: Port, device_name: str):
+    def __init__(self, port: Port):
         Proc.__init__(self, port)
-        self.reset_time = 0
-        self.running = False
+        self.clock = time.time()
+        self.sd_filename = None
+        self.files = dict()
 
     def reset(self):
         """reset ICSP host"""
-        self.reset_time = time.time()
+        self.clock = time.time()
 
     def _decode(self, g: bytes):
         tokens = g.split()
         return tokens[0].upper(), tokens[1:]
 
-    def run(self):
-        """dispatch incoming commands"""
-        if not self.running:
-            return
+    def _tick(self):
+        # if enough time has passed generate some async outpout
+        if time.time() - self.clock > 1.0:
+            self.clock = time.time()
+            self.ser_write(b'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n')
 
+    def _list_sd_card(self):
+        self.ser_write(b'Begin file list\n')
+        for filename, data in self.files.items():
+            self.ser_write(f'{filename} {len(data)}\n'.encode())
+        self.ser_write(b'End file list\n')
+
+    def _sd_append(self, filename, gcode):
+        self.files[filename] += gcode
+
+    def run(self):
+        """process anything in the input buffer and produce output in the out buffer"""
+
+        time.sleep(2)
+
+        # generate asynchronous output
+        self._tick()
+
+        # process input buffer
         while self.ser_avail():
             time.sleep(0.002)
 
@@ -224,35 +245,60 @@ class MarlinProc(Proc):
             # decode
             cmd, args = self._decode(g)
 
-            # dispatch
-            if cmd == b'M20':  # read config words
-                pass
+            # are we writing to the sd card
+            if self.sd_filename:
+                self._sd_append(self.sd_filename, g);
             else:
-                self.ser_write(b'Unknown code: {cmd}')
+                # dispatch
+                if cmd == b'M20':  # read config words
+                    self._list_sd_card(args)
+                elif cmd == b'M23':
+                    self.select_sd_file(args)
+                elif cmd == b'M28':
+                    self.start_sd_write(args)
+                elif cmd == b'M29':
+                    self.ser_write(b'not writing to sd')
+                else:
+                    self.ser_write(b'Unknown code: {cmd}')
 
             self.ser_write(b'ok')
 
 
 class MarlinHost(Port):
-    def __init__(self, device: str):
+
+    def __init__(self):
         Port.__init__(self)
+        self.proc = MarlinProc(self)
 
-        self.proc = MarlinProc(self, device)
-
-    def reset(self):
-        super().reset()
-        self.proc.reset()
-
-    def write(self, data: bytes):
-        """intercept incoming write call so Proc can process it"""
-        super().write(data)
-
-        # Process the data
+    def _run(self):
         self.proc.run()
+
+    @property
+    def in_waiting(self) -> int:
+        """intercept incoming call so Proc can process its input buffer first"""
+        self._run()
+        return super().in_waiting
+
+    def read(self, num_bytes: int = 1) -> bytes:
+        """intercept incoming call so Proc can process its input buffer first"""
+
+        self._run()
+        return super().read(num_bytes)
+
+    def readline(self) -> bytes:
+        """intercept incoming call so Proc can process its input buffer first"""
+
+        self._run()
+        return super().readline()
+
+
+def main():
+    port = MarlinHost()
+    print(port.readline())
 
 
 if __name__ == "__main__":
-    pass
+    main()
     # this help debug in Pythonista
     # import pyload
     # pyload.run(['--port', 'mock', 'x.hex'])
