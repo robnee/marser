@@ -194,7 +194,15 @@ class MarlinProc(Proc):
     ;
     ;   Gnnn
     ;
-    ;   Mnnn
+    ;   M20: list sd card:
+    ;   M23: select sd file: filename
+    ;   M24: start or resume sd print: [S<pos>] [T<time>]
+    ;   M27: report sd print status: [C] [S<seconds>]
+    ;   M28: start sd write: [B1] filename
+    ;   M29: stop sd write:
+    ;   M30: delete sd file: filename
+    ;   M31: print time:
+    ;   M115: get firmware info:
     ;
     """
 
@@ -254,6 +262,8 @@ class MarlinProc(Proc):
                     self._list_sd_card(args)
                 elif cmd == b'M23':
                     self.select_sd_file(args)
+                elif cmd == b'M27':
+                    self.report_sd_print_status():
                 elif cmd == b'M28':
                     self.start_sd_write(args)
                 elif cmd == b'M29':
