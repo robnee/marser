@@ -209,6 +209,7 @@ class MarlinProc(Proc):
     def __init__(self, port: Port):
         Proc.__init__(self, port)
         self.clock = time.time()
+        self.sd_status_interval = 1
         self.sd_filename = None
         self.files = dict()
 
@@ -218,13 +219,24 @@ class MarlinProc(Proc):
 
     def _decode(self, g: bytes):
         tokens = g.split()
-        return tokens[0].upper(), tokens[1:]
+
+        args = dict()
+        for token in tokens[1:]:
+            if str(token[0]).isalpha():
+                args[str(token[0])] = token[1:]
+            else:
+                args['@'] = token
+
+        return tokens[0].upper(), args
 
     def _tick(self):
         # if enough time has passed generate some async outpout
-        if time.time() - self.clock > 1.0:
+        if time.time() - self.clock > self.sd_status_interval:
             self.clock = time.time()
             self.ser_write(b'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n')
+
+    def _sd_append(self, filename, gcode):
+        self.files[filename] += gcode
 
     def _list_sd_card(self):
         self.ser_write(b'Begin file list\n')
@@ -232,8 +244,34 @@ class MarlinProc(Proc):
             self.ser_write(f'{filename} {len(data)}\n'.encode())
         self.ser_write(b'End file list\n')
 
-    def _sd_append(self, filename, gcode):
-        self.files[filename] += gcode
+    def _select_sd_file(self, args):
+        self.sd_filename = args
+
+    def _report_sd_print_status(self, args):
+        if 'S' in args:
+            self.sd_status_interval = int(args['S'])
+        else:
+            self.ser_write(b'report sd_print_status')
+
+    def _start_sd_write(self, args):
+        if '@' in args:
+            self.sd_write_flag = True
+            self.sd_filename = args['@']
+        else:
+            self.ser_write(b'no filename')
+
+    def _stop_sd_write(self):
+        self.sd_write_flag = False
+        self.sd_filename = False
+
+    def _delete_sd_file(self, args):
+        pass
+
+    def _print_time(self):
+        self.ser_write(b'print time')
+
+    def _firmware_info(self):
+        self.ser_write(b'firmware info')
 
     def run(self):
         """process anything in the input buffer and produce output in the out buffer"""
@@ -254,20 +292,26 @@ class MarlinProc(Proc):
             cmd, args = self._decode(g)
 
             # are we writing to the sd card
-            if self.sd_filename:
-                self._sd_append(self.sd_filename, g);
+            if self.sd_filename and self.sd_write_flag:
+                self._sd_append(self.sd_filename, g)
             else:
                 # dispatch
                 if cmd == b'M20':  # read config words
-                    self._list_sd_card(args)
+                    self._list_sd_card()
                 elif cmd == b'M23':
-                    self.select_sd_file(args)
+                    self._select_sd_file(args)
                 elif cmd == b'M27':
-                    self.report_sd_print_status():
+                    self._report_sd_print_status(args)
                 elif cmd == b'M28':
-                    self.start_sd_write(args)
+                    self._start_sd_write(args)
                 elif cmd == b'M29':
                     self.ser_write(b'not writing to sd')
+                elif cmd == b'M30':
+                    self._delete_sd_file(args)
+                elif cmd == b'M31':
+                    self._print_time()
+                elif cmd == b'M115':
+                    self._firmware_info()
                 else:
                     self.ser_write(b'Unknown code: {cmd}')
 
