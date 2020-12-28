@@ -3,11 +3,13 @@
 """
 Upload a gcode file to a Marlin host and start a print job
 
-Mock Marlin interface for testing.  Implements the serial port protocol that can be wrapped in a Comm object.
+Mock Marlin interface for testing.  Implements the serial port protocol that can be wrapped 
+in a Comm object.
 
-Attempting to create a state machine that runs on every call to the serial port read API and reads and writes to and
-from the input and output queue until the state machine blocks on a serial read for the next icsp command byte.
-At that point the inbound request can be satisfied from one of the two queues.
+Attempting to create a state machine that runs on every call to the serial port read API and 
+reads and writes to and from the input and output queue until the state machine blocks on a
+serial read for the next icsp command byte.  At that point the inbound request can be 
+satisfied from one of the two queues.
 
 How to do that?  Perhaps this is an example of coroutine programming with yield?  That might simplify the handoff
 in and out of the state machine.  Not sure how to yield out of the state machine without creating a call chain that
@@ -57,8 +59,9 @@ class Buffer:
 
 
 class Port:
-    """implements a pySerial serial.Serial object that can be connected to a mock host for simulation and testing.
-    can be configured to introduce noise into the communications for error recovery testing"""
+    """implements a pySerial serial.Serial object that can be connected to a mock host for
+    simulation and testing.  can be configured to introduce noise into the communications for 
+    error recovery testing"""
 
     def __init__(self):
         self._dtr = False
@@ -155,40 +158,11 @@ class Port:
         pass
 
 
-class Proc:
-    """base class for simulated host processors"""
-
-    def __init__(self, port: Port):
-        self.port = port
-        self.host_port = port.get_host_port()
-
-    def reset(self):
-        """reset host"""
-        logging.info(f'Proc reset: {self.port.inq} out: {self.port.outq}')
-
-    def ser_avail(self) -> int:
-        return self.host_port.in_waiting
-
-    def ser_read(self, num_bytes: int = 1) -> bytes:
-        return self.host_port.read(num_bytes)
-
-    def ser_readline(self) -> bytes:
-        return self.host_port.readline()
-
-    def ser_read_word(self) -> int:
-        low = self.ser_read()
-        high = self.ser_read()
-        return int.from_bytes(low + high, byteorder='little')
-
-    def ser_write(self, data: bytes):
-        self.host_port.write(data)
-
-
 class Gcode:
     pass
 
 
-class MarlinProc(Proc):
+class MarlinProc:
     """
     ;   Commands:
     ;
@@ -207,7 +181,7 @@ class MarlinProc(Proc):
     """
 
     def __init__(self, port: Port):
-        Proc.__init__(self, port)
+        self.port = port
         self.clock = time.time()
         self.sd_status_interval = 1
         self.sd_filename = None
@@ -222,8 +196,10 @@ class MarlinProc(Proc):
 
         args = dict()
         for token in tokens[1:]:
-            if str(token[0]).isalpha():
-                args[str(token[0])] = token[1:]
+            reg = token[:1].decode()
+            print('reg', reg)
+            if reg.isalpha() and reg.isupper():
+                args[reg] = token[1:]
             else:
                 args['@'] = token
 
@@ -233,16 +209,16 @@ class MarlinProc(Proc):
         # if enough time has passed generate some async outpout
         if time.time() - self.clock > self.sd_status_interval:
             self.clock = time.time()
-            self.ser_write(b'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n')
+            self.port.write(b'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n')
 
     def _sd_append(self, filename, gcode):
         self.files[filename] += gcode
 
     def _list_sd_card(self):
-        self.ser_write(b'Begin file list\n')
+        self.port.write(b'Begin file list\n')
         for filename, data in self.files.items():
-            self.ser_write(f'{filename} {len(data)}\n'.encode())
-        self.ser_write(b'End file list\n')
+            self.port.write(f'{filename} {len(data)}\n'.encode())
+        self.port.write(b'End file list\n')
 
     def _select_sd_file(self, args):
         self.sd_filename = args
@@ -251,14 +227,14 @@ class MarlinProc(Proc):
         if 'S' in args:
             self.sd_status_interval = int(args['S'])
         else:
-            self.ser_write(b'report sd_print_status')
+            self.port.write(b'report sd_print_status')
 
     def _start_sd_write(self, args):
         if '@' in args:
             self.sd_write_flag = True
             self.sd_filename = args['@']
         else:
-            self.ser_write(b'no filename')
+            self.port.write(b'no filename')
 
     def _stop_sd_write(self):
         self.sd_write_flag = False
@@ -268,10 +244,10 @@ class MarlinProc(Proc):
         pass
 
     def _print_time(self):
-        self.ser_write(b'print time')
+        self.port.write(b'print time')
 
     def _firmware_info(self):
-        self.ser_write(b'firmware info')
+        self.port.write(b'firmware info')
 
     def run(self):
         """process anything in the input buffer and produce output in the out buffer"""
@@ -282,7 +258,7 @@ class MarlinProc(Proc):
         self._tick()
 
         # process input buffer
-        while self.ser_avail():
+        while self.port.in_waiting:
             time.sleep(0.002)
 
             # command
@@ -305,7 +281,7 @@ class MarlinProc(Proc):
                 elif cmd == b'M28':
                     self._start_sd_write(args)
                 elif cmd == b'M29':
-                    self.ser_write(b'not writing to sd')
+                    self.port.write(b'not writing to sd')
                 elif cmd == b'M30':
                     self._delete_sd_file(args)
                 elif cmd == b'M31':
@@ -313,16 +289,16 @@ class MarlinProc(Proc):
                 elif cmd == b'M115':
                     self._firmware_info()
                 else:
-                    self.ser_write(b'Unknown code: {cmd}')
+                    self.port.write(b'Unknown code: {cmd}')
 
-            self.ser_write(b'ok')
+            self.port.write(b'ok')
 
 
 class MarlinHost(Port):
 
     def __init__(self):
         Port.__init__(self)
-        self.proc = MarlinProc(self)
+        self.proc = MarlinProc(self.get_host_port())
 
     def _run(self):
         self.proc.run()
