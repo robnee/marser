@@ -170,7 +170,7 @@ class MarlinProc:
     ;
     ;   M20: list sd card:
     ;   M23: select sd file: filename
-    ;   M24: start or resume sd print: [S<pos>] [T<time>]
+    ;   M24: start sd print: [S<pos>] [T<time>]
     ;   M27: report sd print status: [C] [S<seconds>]
     ;   M28: start sd write: [B1] filename
     ;   M29: stop sd write:
@@ -184,7 +184,8 @@ class MarlinProc:
         self.port = port
         self.clock = time.time()
         self.sd_status_interval = 1
-        self.sd_filename = None
+        self.sd_selected_filename = None
+        self.sd_write_filename = None
         self.files = dict()
 
     def reset(self):
@@ -221,8 +222,14 @@ class MarlinProc:
         self.port.write(b'End file list\n')
 
     def _select_sd_file(self, args):
-        self.sd_filename = args
+        self.sd_selected_filename = args
 
+    def _start_sd_print(self, args):
+        if self.sd_selected_filename:
+            pass
+        else:
+            self.port.write(b'no file selected\n')
+            
     def _report_sd_print_status(self, args):
         if 'S' in args:
             self.sd_status_interval = int(args['S'])
@@ -231,14 +238,13 @@ class MarlinProc:
 
     def _start_sd_write(self, args):
         if '@' in args:
-            self.sd_write_flag = True
-            self.sd_filename = args['@']
+            self.sd_write_filename = args['@']
+            self.files[self.sd_write_filename] = b''
         else:
             self.port.write(b'no filename')
 
     def _stop_sd_write(self):
-        self.sd_write_flag = False
-        self.sd_filename = False
+        self.sd_write_filename = False
 
     def _delete_sd_file(self, args):
         pass
@@ -293,6 +299,9 @@ class MarlinProc:
 
             self.port.write(b'ok')
 
+    def get_file(self, filename):
+        return self.files[filename]
+        
 
 class MarlinHost(Port):
 
