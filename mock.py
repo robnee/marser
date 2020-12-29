@@ -23,8 +23,8 @@ import logging
 
 
 class Buffer:
-    def __init__(self):
-        self.buf = bytes()
+    def __init__(self, data=b''):
+        self.buf = data
 
     def __len__(self):
         return len(self.buf)
@@ -56,6 +56,9 @@ class Buffer:
             ret, self.buf = self.buf[: nl + 1], self.buf[nl + 1:]
 
         return ret
+        
+    def value(self):
+        return self.buf
 
 
 class Port:
@@ -162,6 +165,10 @@ class Gcode:
     pass
 
 
+class MarlinError(Exception):
+    pass
+    
+    
 class MarlinProc:
     """
     ;   Commands:
@@ -198,7 +205,6 @@ class MarlinProc:
         args = dict()
         for token in tokens[1:]:
             reg = token[:1].decode()
-            print('reg', reg)
             if reg.isalpha() and reg.isupper():
                 args[reg] = token[1:]
             else:
@@ -228,26 +234,34 @@ class MarlinProc:
         if self.sd_selected_filename:
             pass
         else:
-            self.port.write(b'no file selected\n')
+            raise MarlinError('no file selected')
             
     def _report_sd_print_status(self, args):
         if 'S' in args:
             self.sd_status_interval = int(args['S'])
         else:
-            self.port.write(b'report sd_print_status')
+            raise MarlinError('no filename')
 
     def _start_sd_write(self, args):
         if '@' in args:
             self.sd_write_filename = args['@']
             self.files[self.sd_write_filename] = b''
         else:
-            self.port.write(b'no filename')
+            raise MarlinError('no filename')
 
     def _stop_sd_write(self):
         self.sd_write_filename = False
 
     def _delete_sd_file(self, args):
-        pass
+        try:
+            self.sd_write_filename = args['@']
+        except KeyError:
+            raise MarlinError('no filename')
+
+        try:
+            del self.files[args['@']]
+        except KeyError:
+            raise MarlinError('file not found')
 
     def _print_time(self):
         self.port.write(b'print time')
@@ -258,8 +272,6 @@ class MarlinProc:
     def run(self):
         """process anything in the input buffer and produce output in the out buffer"""
 
-        time.sleep(2)
-
         # generate asynchronous output
         self._tick()
 
@@ -268,14 +280,14 @@ class MarlinProc:
             time.sleep(0.002)
 
             # command
-            g = self.ser_readline()
+            g = self.port.readline()
 
             # decode
             cmd, args = self._decode(g)
 
             # are we writing to the sd card
-            if self.sd_filename and self.sd_write_flag:
-                self._sd_append(self.sd_filename, g)
+            if self.sd_write_filename and cmd != b'M29':
+                self._sd_append(self.sd_write_filename, g)
             else:
                 # dispatch
                 if cmd == b'M20':  # read config words
@@ -333,6 +345,7 @@ class MarlinHost(Port):
 
 def main():
     port = MarlinHost()
+    time.sleep(1.2)
     print(port.readline())
 
 

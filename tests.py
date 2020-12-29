@@ -1,29 +1,20 @@
 import pytest
-from mock import MarlinProc
+from mock import Buffer, Port, MarlinProc
 
 
 @pytest.fixture()
 def port():
-    class Port:
-        def __init__(self):
-            self.outq = b''
-
-        def read(self, count):
-            return b'K'
-
-        def write(self, data):
-            self.outq += data
-
     return Port()
 
 
-def test_1(port):
+def test_read(port):
+    port.inq = Buffer(b'K')
     assert port.read(1) == b'K'
 
 
 def test_write(port):
     port.write(b'abc')
-    assert port.outq == b'abc'
+    assert port.outq.value() == b'abc'
 
 
 def test_decode(port):
@@ -41,9 +32,24 @@ def test_sd_write(port):
     proc._stop_sd_write()
     assert proc.get_file(filename) == b'G29\n'
 
-def test_run(port):
-    pass
+
+def test_sd_delete(port):
+    filename = 'abc.g'
+    proc = MarlinProc(port)
+    proc._start_sd_write({'@': filename})
+    proc._sd_append(filename, b'G29\n')
+    proc._stop_sd_write()
+    proc._delete_sd_file({'@': filename})
+    with pytest.raises(KeyError):
+        proc.get_file(filename)
     
+def test_run(port):
+    filename = b'abc.g'
+    port.inq = Buffer(b'M28 abc.g\nG29\nM29\n')
+    proc = MarlinProc(port)
+    proc.run()
+    assert proc.get_file(filename) == b'G29\n'
+   
 
 if __name__ == '__main__':
     pytest.main(['./tests.py'])
