@@ -200,11 +200,11 @@ class MarlinProc:
         self.clock = time.time()
 
     def _decode(self, g: bytes):
-        tokens = g.split()
+        tokens = g.decode().split()
 
         args = dict()
         for token in tokens[1:]:
-            reg = token[:1].decode()
+            reg = token[:1]
             if reg.isalpha() and reg.isupper():
                 args[reg] = token[1:]
             else:
@@ -286,25 +286,25 @@ class MarlinProc:
             cmd, args = self._decode(g)
 
             # are we writing to the sd card
-            if self.sd_write_filename and cmd != b'M29':
+            if self.sd_write_filename and cmd != 'M29':
                 self._sd_append(self.sd_write_filename, g)
             else:
                 # dispatch
-                if cmd == b'M20':  # read config words
+                if cmd == 'M20':  # read config words
                     self._list_sd_card()
-                elif cmd == b'M23':
+                elif cmd == 'M23':
                     self._select_sd_file(args)
-                elif cmd == b'M27':
+                elif cmd == 'M27':
                     self._report_sd_print_status(args)
-                elif cmd == b'M28':
+                elif cmd == 'M28':
                     self._start_sd_write(args)
-                elif cmd == b'M29':
+                elif cmd == 'M29':
                     self.port.write(b'not writing to sd')
-                elif cmd == b'M30':
+                elif cmd == 'M30':
                     self._delete_sd_file(args)
-                elif cmd == b'M31':
+                elif cmd == 'M31':
                     self._print_time()
-                elif cmd == b'M115':
+                elif cmd == 'M115':
                     self._firmware_info()
                 else:
                     self.port.write(b'Unknown code: {cmd}')

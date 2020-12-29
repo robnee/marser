@@ -19,9 +19,9 @@ def test_write(port):
 
 def test_decode(port):
     proc = MarlinProc(port)
-    assert proc._decode(b'M20') == (b'M20', {})
-    assert proc._decode(b'M28 abc.g') == (b'M28', {'@': b'abc.g'})
-    assert proc._decode(b'M28 B1 abc.g') == (b'M28', {'@': b'abc.g', 'B': b'1'})
+    assert proc._decode(b'M20') == ('M20', {})
+    assert proc._decode(b'M28 abc.g') == ('M28', {'@': 'abc.g'})
+    assert proc._decode(b'M28 B1 abc.g') == ('M28', {'@':  'abc.g', 'B': '1'})
 
 
 def test_sd_write(port):
@@ -44,7 +44,7 @@ def test_sd_delete(port):
         proc.get_file(filename)
     
 def test_run(port):
-    filename = b'abc.g'
+    filename = 'abc.g'
     port.inq = Buffer(b'M28 abc.g\nG29\nM29\n')
     proc = MarlinProc(port)
     proc.run()
@@ -53,3 +53,4 @@ def test_run(port):
 
 if __name__ == '__main__':
     pytest.main(['./tests.py'])
+ 
