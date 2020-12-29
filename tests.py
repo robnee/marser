@@ -7,6 +7,12 @@ def port():
     return Port()
 
 
+def save_file(proc, filename, data):
+    proc._start_sd_write({'@': filename})
+    proc._sd_append(filename, data)
+    proc._stop_sd_write()
+    
+
 def test_read(port):
     port.inq = Buffer(b'K')
     assert port.read(1) == b'K'
@@ -49,7 +55,16 @@ def test_run(port):
     proc = MarlinProc(port)
     proc.run()
     assert proc.get_file(filename) == b'G29\n'
-   
+    
+
+def test_list_sd_card(port):
+    filename, data = 'abc.g', b'G29\n'
+    out = f'Begin file list\n{filename} {len(data)}\nEnd file list\n'.encode()
+    proc = MarlinProc(port)
+    save_file(proc, filename, data)
+    proc._list_sd_card()
+    assert port.outq.value() == out
+    
 
 if __name__ == '__main__':
     pytest.main(['./tests.py'])
