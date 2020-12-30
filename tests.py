@@ -91,6 +91,7 @@ def test_sd_write(proc):
     proc._sd_append(filename, b'G29\n')
     proc._stop_sd_write()
     assert proc.get_file(filename) == b'G29\n'
+    assert proc.sd_write_filename is None
 
 
 def test_sd_delete(proc):
@@ -140,6 +141,12 @@ def test_sd_print(procfile):
 
 
 def test_print_time(procfile):
+    filename = 'abc.g'
+    with pytest.raises(MarlinError):
+        procfile._print_time()
+
+    procfile._select_sd_file({'@': filename})
+    procfile._start_sd_print({})
     assert procfile._print_time() == 'Print time\n'
 
 
@@ -157,8 +164,8 @@ def test_report_sd_print_status(procfile):
 
 def test_host(host):
     host.write(b'M115')
-    assert host.in_waiting == 17
-    assert host.readline() == b'Firmware info\n'
+    assert host.in_waiting == 33
+    assert host.readline() == b'FIRMWARE NAME:MarlinProc V1.0\n'
     assert host.read(1) == b'o'
 
     host.reset()
@@ -172,6 +179,13 @@ def test_host(host):
     assert host.readline() == b'Begin file list\n'
     assert host.readline() == b'xyz.g 4\n'
 
+    host.reset()
+    host.write(b'M30 xyz.g\n')
+    assert host.readline() == b'File deleted:xyz.g\n'
+    host.reset()
+    host.write(b'M20')
+    assert host.readline() == b'Begin file list\n'
+    assert host.readline() == b'End file list\n'
 
 
 if __name__ == '__main__':

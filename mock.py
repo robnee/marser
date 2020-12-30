@@ -184,6 +184,7 @@ class MarlinProc:
     """
 
     def __init__(self):
+        self.firmware = 'MarlinProc V1.0'
         self.clock = time.time()
         self.sd_status_interval = 1
         self.sd_selected_filename = None
@@ -195,6 +196,7 @@ class MarlinProc:
         self.clock = time.time()
 
     def _decode(self, g: bytes):
+        """decode gcode commands"""
         tokens = g.decode().strip().split()
 
         args = dict()
@@ -209,7 +211,7 @@ class MarlinProc:
 
     def _tick(self):
         # todo: add unit test
-        # if enough time has passed generate some async outpout
+        # if enough time has passed generate some async output
         if time.time() - self.clock > self.sd_status_interval:
             self.clock = time.time()
             return 'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n'
@@ -269,22 +271,25 @@ class MarlinProc:
 
     def _delete_sd_file(self, args):
         try:
-            self.sd_write_filename = args['@']
+            filename = args['@']
         except KeyError:
             raise MarlinError('Deletion failed, File:')
 
         try:
-            del self.files[args['@']]
+            del self.files[filename]
         except KeyError:
-            raise MarlinError('Deletion failed, File: ' + args['@'])
+            raise MarlinError(f'Deletion failed, File: {filename}')
 
-        return "File deleted:" + args['@']
+        return f'File deleted:{filename}\n'
 
     def _print_time(self):
+        if not self.sd_selected_filename:
+            raise MarlinError('Not SD printing')
+
         return 'Print time\n'
 
     def _firmware_info(self):
-        return 'Firmware info\n'
+        return f'FIRMWARE NAME:{self.firmware}\n'
 
     def run(self, port):
         """process anything in the input buffer and produce output in the out buffer"""
@@ -365,13 +370,11 @@ class MarlinHost(Port):
 
     def read(self, num_bytes: int = 1) -> bytes:
         """intercept incoming call so Proc can process its input buffer first"""
-
         self._run()
         return super().read(num_bytes)
 
     def readline(self) -> bytes:
         """intercept incoming call so Proc can process its input buffer first"""
-
         self._run()
         return super().readline()
 
