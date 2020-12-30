@@ -139,6 +139,10 @@ def test_sd_print(procfile):
     procfile._start_sd_print({})
 
 
+def test_print_time(procfile):
+    assert procfile._print_time() == 'Print time\n'
+
+
 def test_report_sd_print_status(procfile):
     filename = 'abc.g'
     with pytest.raises(MarlinError):
@@ -150,10 +154,25 @@ def test_report_sd_print_status(procfile):
     procfile._start_sd_print({})
     procfile._report_sd_print_status({})
 
+
 def test_host(host):
-    pass
+    host.write(b'M115')
+    assert host.in_waiting == 17
+    assert host.readline() == b'Firmware info\n'
+    assert host.read(1) == b'o'
+
+    host.reset()
+    host.write(b'M28 xyz.g\n')
+    host.write(b'G29\n')
+    host.write(b'M29\n')
+    assert host.readline() == b'Writing to file: xyz.g\n'
+
+    host.reset()
+    host.write(b'M20')
+    assert host.readline() == b'Begin file list\n'
+    assert host.readline() == b'xyz.g 4\n'
+
 
 
 if __name__ == '__main__':
     pytest.main(['-v', './tests.py'])
-

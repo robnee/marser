@@ -208,6 +208,7 @@ class MarlinProc:
         return tokens[0].upper(), args
 
     def _tick(self):
+        # todo: add unit test
         # if enough time has passed generate some async outpout
         if time.time() - self.clock > self.sd_status_interval:
             self.clock = time.time()
@@ -280,10 +281,10 @@ class MarlinProc:
         return "File deleted:" + args['@']
 
     def _print_time(self):
-        return 'print time'
+        return 'Print time\n'
 
     def _firmware_info(self):
-        return 'firmware info'
+        return 'Firmware info\n'
 
     def run(self, port):
         """process anything in the input buffer and produce output in the out buffer"""
@@ -302,13 +303,14 @@ class MarlinProc:
             # decode
             cmd, args = self._decode(g)
 
+            # todo: handle MarlinError
             # are we writing to the sd card
             if self.sd_write_filename and cmd != 'M29':
                 self._sd_append(self.sd_write_filename, g)
             else:
                 # dispatch
                 if cmd == 'M20':  # read config words
-                    response =  self._list_sd_card()
+                    response = self._list_sd_card()
                 elif cmd == 'M23':
                     response = self._select_sd_file(args)
                 elif cmd == 'M24':
@@ -351,6 +353,10 @@ class MarlinHost(Port):
     def _run(self):
         self.proc.run(self.get_host_port())
 
+    def reset(self):
+        super().reset()
+        self.proc.reset()
+
     @property
     def in_waiting(self) -> int:
         """intercept incoming call so Proc can process its input buffer first"""
@@ -368,6 +374,9 @@ class MarlinHost(Port):
 
         self._run()
         return super().readline()
+
+    def write(self, data: bytes):
+        return super().write(data)
 
 
 def main():
