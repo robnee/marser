@@ -1,5 +1,5 @@
 import pytest
-from mock import Buffer, Port, MarlinProc, MarlinError
+from mock import Buffer, Port, MarlinProc, MarlinError, MarlinHost
 
 
 @pytest.fixture()
@@ -10,6 +10,11 @@ def port():
 @pytest.fixture()
 def proc():
     return MarlinProc()
+
+
+@pytest.fixture()
+def host():
+    return MarlinHost()
 
 
 @pytest.fixture()
@@ -103,6 +108,7 @@ def test_sd_delete(proc):
 def test_run(proc):
     filename = 'abc.g'
     port = Port()
+    assert port.outq.value() == b''
     port.inq = Buffer(b'M28 abc.g\nG29\nM29\n')
     proc.run(port)
     assert port.outq.value() == f'Writing to file: {filename}\nok\nDone saving file.\n'.encode()
@@ -143,6 +149,9 @@ def test_report_sd_print_status(procfile):
     procfile._select_sd_file({'@': filename})
     procfile._start_sd_print({})
     procfile._report_sd_print_status({})
+
+def test_host(host):
+    pass
 
 
 if __name__ == '__main__':

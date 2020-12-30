@@ -289,8 +289,9 @@ class MarlinProc:
         """process anything in the input buffer and produce output in the out buffer"""
 
         # generate asynchronous output
-        self._tick()
-
+        response = self._tick() or ""
+        port.write(response.encode())
+        
         # process input buffer
         while port.in_waiting:
             time.sleep(0.002)
@@ -307,7 +308,7 @@ class MarlinProc:
             else:
                 # dispatch
                 if cmd == 'M20':  # read config words
-                    response = self._list_sd_card()
+                    response =  self._list_sd_card()
                 elif cmd == 'M23':
                     response = self._select_sd_file(args)
                 elif cmd == 'M24':
@@ -345,10 +346,10 @@ class MarlinHost(Port):
 
     def __init__(self):
         Port.__init__(self)
-        self.proc = MarlinProc(self.get_host_port())
+        self.proc = MarlinProc()
 
     def _run(self):
-        self.proc.run()
+        self.proc.run(self.get_host_port())
 
     @property
     def in_waiting(self) -> int:
