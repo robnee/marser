@@ -84,6 +84,7 @@ class Port:
         return data
 
     def _clear(self):
+        self._dtr = False
         self.reset_input_buffer()
         self.reset_output_buffer()
 
@@ -110,10 +111,6 @@ class Port:
 
     @dtr.setter
     def dtr(self, state: bool):
-        # detect dtr reset
-        if self.dtr and not state:
-            self.reset()
-
         self._dtr = state
 
     @property
@@ -158,7 +155,7 @@ class Port:
         self._clear()
 
     def close(self):
-        pass
+        self._clear()
 
 
 class Gcode:
@@ -184,7 +181,6 @@ class MarlinProc:
     ;   M30: delete sd file: filename
     ;   M31: print time:
     ;   M115: get firmware info:
-    ;
     """
 
     def __init__(self, port: Port):
@@ -228,7 +224,15 @@ class MarlinProc:
         self.port.write(b'End file list\n')
 
     def _select_sd_file(self, args):
-        self.sd_selected_filename = args
+        try:
+            filename = args['@']
+        except KeyError:
+            raise MarlinError('no filename')
+
+        if filename in self.files:
+            self.sd_selected_filename = filename
+        else:
+            raise MarlinError('file not found')
 
     def _start_sd_print(self, args):
         if self.sd_selected_filename:
@@ -239,8 +243,10 @@ class MarlinProc:
     def _report_sd_print_status(self, args):
         if 'S' in args:
             self.sd_status_interval = int(args['S'])
+        elif not self.sd_selected_filename:
+            raise MarlinError('Not SD printing')
         else:
-            raise MarlinError('no filename')
+            self.port.write(b'printing byte 123/12345\n')
 
     def _start_sd_write(self, args):
         if '@' in args:
