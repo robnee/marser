@@ -9,25 +9,26 @@ def port():
 
 @pytest.fixture()
 def proc():
-    return MarlinProc(Port())
+    return MarlinProc()
 
 
 @pytest.fixture()
 def procfile():
-    proc = MarlinProc(Port())
-    save_file(proc, 'abc.g', b'G29\n')
+    proc = MarlinProc()
+    proc.save_file('abc.g', b'G29\n')
     return proc
 
-
-def save_file(proc, filename, data):
-    proc._start_sd_write({'@': filename})
-    proc._sd_append(filename, data)
-    proc._stop_sd_write()
-    
 
 def test_read(port):
     port.inq = Buffer(b'K')
     assert port.read(1) == b'K'
+
+
+def test_readline(port):
+    port.inq = Buffer(b'hello\nthere\n')
+    assert port.readline() == b'hello\n'
+    port.inq = Buffer(b'hello')
+    assert port.readline() == b'hello'
 
 
 def test_write(port):
@@ -41,6 +42,13 @@ def test_dtr(port):
     assert port.dtr is True
     port.reset()
     assert port.dtr is False
+
+
+def test_noise(port):
+    data = b'123'
+    port.error_prob['write'] = 1.0
+    assert port._add_noise(data, 'read') == data
+    assert port._add_noise(data, 'write') != data
 
 
 def test_close(port):
@@ -61,8 +69,10 @@ def test_host_port(port):
     assert port.outq == host_port.inq
 
 
-def test_decode(port):
-    proc = MarlinProc(port)
+# Proc tests
+
+
+def test_decode(proc):
     assert proc._decode(b'M20') == ('M20', {})
     assert proc._decode(b'M28 abc.g') == ('M28', {'@': 'abc.g'})
     assert proc._decode(b'M28 B1 abc.g') == ('M28', {'@':  'abc.g', 'B': '1'})
@@ -80,9 +90,7 @@ def test_sd_write(proc):
 
 def test_sd_delete(proc):
     filename = 'abc.g'
-    proc._start_sd_write({'@': filename})
-    proc._sd_append(filename, b'G29\n')
-    proc._stop_sd_write()
+    proc.save_file(filename, b'G29\n')
     with pytest.raises(MarlinError):
         proc._delete_sd_file({})
     with pytest.raises(MarlinError):
@@ -92,21 +100,25 @@ def test_sd_delete(proc):
         proc.get_file(filename)
 
 
-def test_run(port):
+def test_run(proc):
     filename = 'abc.g'
+    port = Port()
     port.inq = Buffer(b'M28 abc.g\nG29\nM29\n')
-    proc = MarlinProc(port)
-    proc.run()
+    proc.run(port)
+    assert port.outq.value() == f'Writing to file: {filename}\nok\nDone saving file.\n'.encode()
     assert proc.get_file(filename) == b'G29\n'
-    
 
-def test_list_sd_card(port):
+    port.reset()
+    port.inq = Buffer(b'G12345\n')
+    proc.run(port)
+    assert port.outq.value() == b'Unknown command: G12345\nok\n'
+
+
+def test_list_sd_card(proc):
     filename, data = 'abc.g', b'G29\n'
-    out = f'Begin file list\n{filename} {len(data)}\nEnd file list\n'.encode()
-    proc = MarlinProc(port)
-    save_file(proc, filename, data)
-    proc._list_sd_card()
-    assert port.outq.value() == out
+    expected = f'Begin file list\n{filename} {len(data)}\nEnd file list\n'
+    proc.save_file(filename, data)
+    assert proc._list_sd_card() == expected
 
 
 def test_sd_print(procfile):
@@ -134,5 +146,5 @@ def test_report_sd_print_status(procfile):
 
 
 if __name__ == '__main__':
-    pytest.main(['./tests.py'])
+    pytest.main(['-v', './tests.py'])
 
