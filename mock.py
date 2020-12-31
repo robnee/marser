@@ -381,6 +381,21 @@ class MarlinHost(Port):
     def write(self, data: bytes):
         return super().write(data)
 
+    def save_file(self, filename, data):
+        self.write(f'M28 {filename}\n'.encode())
+        response = self.read(self.in_waiting)
+        if response != b'Writing to file: abc.gco\nok\n':
+            raise ValueError(response)
+        
+        self.write(data)
+        if self.in_waiting:
+            response = self.read(self.in_waiting)
+            raise ValueError(response)
+            
+        self.write(b'M29\n')
+        response = self.read(self.in_waiting)
+        if response == b'Writing to file: xyz.g\n':
+            raise ValueError(response)
 
 def main():
     port = MarlinHost()
