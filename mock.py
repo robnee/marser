@@ -15,6 +15,11 @@ How to do that?  Perhaps this is an example of coroutine programming with yield?
 in and out of the state machine.  Not sure how to yield out of the state machine without creating a call chain that
 goes deeper and deeper.
 
+todo:
+    add bed and ex temp commands for preheat
+    add monitor for heat reports.  can they be suppressed?
+    add handling of MarlinError
+    
 """
 
 import time
@@ -162,6 +167,26 @@ class Gcode:
     pass
 
 
+class Timer():
+    def __init__(self, interval: float):
+        self.interval = interval
+        self.start_time = time.time()
+        self.reset()
+
+    def reset(self):
+        self.target = time.time() + self.interval
+    
+    def expired(self):
+        return time.time() > self.target
+
+    def tick(self):
+        if self.expired():
+            self.reset()
+            return True
+        
+        return False
+
+
 class MarlinError(Exception):
     pass
     
@@ -175,18 +200,23 @@ class MarlinProc:
     ;   M20: list sd card:
     ;   M23: select sd file: filename
     ;   M24: start sd print: [S<pos>] [T<time>]
-    ;   M27: report sd print status: [C] [S<seconds>]
-    ;   M28: start sd write: [B1] filename
-    ;   M29: stop sd write:
-    ;   M30: delete sd file: filename
-    ;   M31: print time:
-    ;   M115: get firmware info:
+    ;   M25:   pause sd print:
+    ;   M27:   report sd print status: [C] [S<seconds>]
+    ;   M28:   start sd write: [B1] filename
+    ;   M29:   stop sd write:
+    ;   M30:   delete sd file: filename
+    ;   M31:   print time:
+    ;   M104:  set hotend temperature [S<temp>]  [T<index>]  [F<flag>]
+    ;   M105:  report_temperatures [T<index>]
+    ;   M115:  get firmware info:
+    ;   M140:  set bed temperature [S<temp>]
+    :   M155:  temperature auto report [S<sec>]
     """
 
     def __init__(self):
         self.firmware = 'MarlinProc V1.0'
-        self.clock = time.time()
-        self.sd_status_interval = 1
+        self.temp_timer = None
+        self.print_timer = None
         self.sd_selected_filename = None
         self.sd_write_filename = None
         self.files = dict()
@@ -212,10 +242,17 @@ class MarlinProc:
     def _tick(self):
         # todo: add unit test
         # if enough time has passed generate some async output
-        if time.time() - self.clock > self.sd_status_interval:
-            self.clock = time.time()
-            return 'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n'
+        response = b''
+        if self.print_timer and self.print_timer.tick():
+            response += 'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n'
+        if self.temp_timer and self.temp_timer.tick():
+            response += 'T:20 B:20\n'
 
+        return response
+
+    def _temp_report(self):
+        return 'T:20 B:20\n'
+        
     def _sd_append(self, filename, gcode):
         self.files[filename] += gcode
 
@@ -241,12 +278,21 @@ class MarlinProc:
 
     def _start_sd_print(self, args):
         if self.sd_selected_filename:
-            pass
+            self.print_timer = Timer(2)
         else:
             raise MarlinError('no file selected')
 
         return ""
 
+    def _pause_sd_print(self, args):
+        if self.print_timer:
+            self.print_timer = None
+        else:
+            raise MarlinError('not SD printing')
+
+        return ""
+
+ 
     def _report_sd_print_status(self, args):
         if 'S' in args:
             self.sd_status_interval = int(args['S'])
@@ -288,6 +334,26 @@ class MarlinProc:
 
         return 'Print time\n'
 
+    def _set_hotend_temperature(self, args):
+        try:
+            self.hotend_target = args['S']
+            if self.hotend_target > 0:
+                if not self.temp_timer:
+                    self.temp_timer = Timer(2)
+            elif self.temp_timer:
+                self.temp_timer = None
+        except KeyError:
+            raise MarlinError('no temperature')   
+    
+    def _report_temperatures(self):
+        return _temp_report()
+
+    def _set_bed_temperature(self, args):
+        pass
+    
+    def _temperature_auto_report(self, args):
+        pass
+
     def _firmware_info(self):
         return f'FIRMWARE NAME:{self.firmware}\n'
 
@@ -297,7 +363,8 @@ class MarlinProc:
         # generate asynchronous output
         response = self._tick() or ""
         port.write(response.encode())
-        
+        # todo: process reports into state variables
+
         # process input buffer
         while port.in_waiting:
             time.sleep(0.002)
@@ -313,30 +380,42 @@ class MarlinProc:
             if self.sd_write_filename and cmd != 'M29':
                 self._sd_append(self.sd_write_filename, g)
             else:
-                # dispatch
-                if cmd == 'M20':  # read config words
-                    response = self._list_sd_card()
-                elif cmd == 'M23':
-                    response = self._select_sd_file(args)
-                elif cmd == 'M24':
-                    response = self._start_sd_print(args)
-                elif cmd == 'M27':
-                    response = self._report_sd_print_status(args)
-                elif cmd == 'M28':
-                    response = self._start_sd_write(args)
-                elif cmd == 'M29':
-                    response = self._stop_sd_write()
-                    port.write(response.encode())
-                    continue
-                elif cmd == 'M30':
-                    response = self._delete_sd_file(args)
-                elif cmd == 'M31':
-                    response = self._print_time()
-                elif cmd == 'M115':
-                    response = self._firmware_info()
-                else:
-                    response = f'Unknown command: {cmd}\n'
-
+                # dispatcht
+                try:
+                    if cmd == 'M20':  # read config words
+                        response = self._list_sd_card()
+                    elif cmd == 'M23':
+                        response = self._select_sd_file(args)
+                    elif cmd == 'M24':
+                        response = self._start_sd_print(args)
+                    elif cmd == 'M25':
+                        response = self._pause_sd_print()
+                    elif cmd == 'M27':
+                        response = self._report_sd_print_status(args)
+                    elif cmd == 'M28':
+                        response = self._start_sd_write(args)
+                    elif cmd == 'M29':
+                        response = self._stop_sd_write()
+                        port.write(response.encode())
+                        continue
+                    elif cmd == 'M30':
+                        response = self._delete_sd_file(args)
+                    elif cmd == 'M31':
+                        response = self._print_time()
+                    elif cmd == 'M104':
+                        response = self._set_hotend_temperature(args)
+                    elif cmd == 'M10t':
+                        response = self._report_temperatures(args)
+                    elif cmd == 'M115':
+                        response = self._firmware_info()
+                    elif cmd == 'M140':
+                        response = self._set_bed_temperature(args)
+                    elif cmd == 'M155':
+                        response = self._temperature_auto_report(args)
+                    else:
+                        response = f'Unknown command: {cmd}\n'
+                except MarlinError as e:
+                    response = f'{e}\n'
                 port.write(response.encode())
                 port.write(b'ok\n')
 
@@ -394,17 +473,29 @@ class MarlinHost(Port):
             
         self.write(b'M29\n')
         response = self.read(self.in_waiting)
-        if response == b'Writing to file: xyz.g\n':
+        if response != b'Done saving file.\n':
             raise ValueError(response)
 
+    def start_print(self, filename):
+        self.write(f'M23 {filename}\n'.encode())
+        response = self.read(self.in_waiting)
+        if response != b'Writing to file: abc.gco\nok\n':
+            raise ValueError(response)
+    
+    def preheat(self, material):
+        pass        
+        
 def main():
     port = MarlinHost()
     time.sleep(1.2)
     print(port.readline())
 
+def test():
+    # this help debug in Pythonista
+    import main
+    run(['--port', 'mock', 'x.hex'])
+
 
 if __name__ == "__main__":
     main()
-    # this help debug in Pythonista
-    # import pyload
-    # pyload.run(['--port', 'mock', 'x.hex'])
+

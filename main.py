@@ -8,7 +8,7 @@ DEFAULT_BAUD = 115200
 DEFAULT_PORT = 'mock'
 
 
-def parse_args(argv=None):
+def parse_args(argv):
     parser = ArgumentParser(prog='pyload', description='pyload Bload bootloader tool.')
     parser.add_argument('-p', '--port', default=DEFAULT_PORT, help=f'serial device ({DEFAULT_PORT})')
     parser.add_argument('-b', '--baud', default=DEFAULT_BAUD, help='baud rate')
@@ -16,11 +16,11 @@ def parse_args(argv=None):
     parser.add_argument('--version', action='version', version=VERSION)
     parser.add_argument('filename', default=None, nargs='?', action='store', help='gcode filename')
 
-    return parser.parse_args(args=argv if argv else sys.argv[1:])
+    return parser.parse_args(args=argv)
 
     
-def main():
-    args = parse_args()
+def main(argv):
+    args = parse_args(argv)
     print(args)
     
     if args.port == 'mock':
@@ -34,22 +34,21 @@ def main():
     host.save_file('abc.gco', b'G0\n')
     
     host.write(b'M20')
-    #response = host.read(host.in_waiting)
-    #print(response)
-    assert host.readline() == b'Begin file list\n'
-    assert host.readline() == b'abc.gco 3\n'
+    response = host.read(host.in_waiting)
+    print(response)
+    assert response == b'Begin file list\nabc.gco 3\nEnd file list\nok\n'
 
     host.reset()
     host.write(b'M30 xyz.g\n')
-    assert host.readline() == b'File deleted:xyz.g\n'
+    response = host.read(host.in_waiting)
+    print(response)
+    assert response == b'Deletion failed, File: xyz.g\nok\n'
     host.reset()
     host.write(b'M20')
-    assert host.readline() == b'Begin file list\n'
-    assert host.readline() == b'End file list\n'
+    response = host.read(host.in_waiting)
+    print(response)
+    assert response == b'Begin file list\nabc.gco 3\nEnd file list\nok\n'
 
 
 if __name__ == "__main__":
-    main()
-    # this help debug in Pythonista
-    # import pyload
-    # pyload.run(['--port', 'mock', 'x.hex'])
+    main(sys.argv[1:])
