@@ -1,7 +1,6 @@
 import sys
-import time
 from argparse import ArgumentParser
-from mock import MarlinProc, MarlinError, MarlinHost
+from mock import MarlinError, MarlinHost
 
 VERSION = 'V1'
 DEFAULT_BAUD = 115200
@@ -22,7 +21,7 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
     print(args)
-    
+
     if args.port == 'mock':
         host = MarlinHost()
     else:
@@ -31,7 +30,12 @@ def main(argv):
 
         host = serial.Serial(args.port, baudrate=args.baud, bytesize=8, timeout=0)
 
-    host.save_file('abc.gco', b'G0\n')
+    host.write(b'M31')
+    response = host.read(host.in_waiting)
+    print(response)
+    assert response == b'echo:0 min, 0 sec\nok\n'
+
+    host.proc.save_file('abc.gco', b'G0\n')
     
     host.write(b'M20')
     response = host.read(host.in_waiting)

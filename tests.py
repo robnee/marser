@@ -1,5 +1,7 @@
+import time
 import pytest
 from mock import Buffer, Port, MarlinProc, MarlinError, MarlinHost
+from client import MarlinClient
 
 
 @pytest.fixture()
@@ -142,12 +144,11 @@ def test_sd_print(procfile):
 
 def test_print_time(procfile):
     filename = 'abc.g'
-    with pytest.raises(MarlinError):
-        procfile._print_time()
-
+    assert procfile._print_time() == f"echo:0 min, 0 sec\n"
     procfile._select_sd_file({'@': filename})
     procfile._start_sd_print({})
-    assert procfile._print_time() == 'Print time\n'
+    time.sleep(2)
+    assert procfile._print_time() == f"echo:0 min, 2 sec\n"
 
 
 def test_report_sd_print_status(procfile):
@@ -160,6 +161,10 @@ def test_report_sd_print_status(procfile):
     procfile._select_sd_file({'@': filename})
     procfile._start_sd_print({})
     procfile._report_sd_print_status({})
+
+
+def test_report_temperatures(proc):
+    assert proc._report_temperatures() == 'T:20 E:0 B:20\n'
 
 
 def test_host(host):
@@ -175,17 +180,21 @@ def test_host(host):
     assert host.readline() == b'Writing to file: xyz.g\n'
 
     host.reset()
-    host.write(b'M20')
-    assert host.readline() == b'Begin file list\n'
-    assert host.readline() == b'xyz.g 4\n'
-
-    host.reset()
     host.write(b'M30 xyz.g\n')
     assert host.readline() == b'File deleted:xyz.g\n'
     host.reset()
     host.write(b'M20')
     assert host.readline() == b'Begin file list\n'
     assert host.readline() == b'End file list\n'
+
+
+def test_client(host):
+    filename, data = 'xyz.gco', b'G0\nG1\n'
+    client = MarlinClient(host)
+    client.save_file(filename, data)
+
+    files = client.list_sd_card()
+    assert files == {filename: len(data)}
 
 
 if __name__ == '__main__':
