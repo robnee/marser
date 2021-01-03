@@ -17,8 +17,6 @@ goes deeper and deeper.
 
 todo:
     add bed and ex temp commands for preheat
-    add monitor for heat reports.  can they be suppressed?
-    add handling of MarlinError
     
 """
 

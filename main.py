@@ -37,16 +37,6 @@ def main(argv):
 
     host.proc.save_file('abc.gco', b'G0\n')
     
-    host.write(b'M20')
-    response = host.read(host.in_waiting)
-    print(response)
-    assert response == b'Begin file list\nabc.gco 3\nEnd file list\nok\n'
-
-    host.reset()
-    host.write(b'M30 xyz.g\n')
-    response = host.read(host.in_waiting)
-    print(response)
-    assert response == b'Deletion failed, File: xyz.g\nok\n'
     host.reset()
     host.write(b'M20')
     response = host.read(host.in_waiting)

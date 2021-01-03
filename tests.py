@@ -191,10 +191,17 @@ def test_host(host):
 def test_client(host):
     filename, data = 'xyz.gco', b'G0\nG1\n'
     client = MarlinClient(host)
+
+    assert client.print_time() == b'echo:0 min, 0 sec\nok\n'
+
     client.save_file(filename, data)
 
     files = client.list_sd_card()
     assert files == {filename: len(data)}
+
+    with pytest.raises(ValueError):
+        client.delete_sd_file('abc.gco')
+    assert client.delete_sd_file(filename) is None
 
 
 if __name__ == '__main__':
