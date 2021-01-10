@@ -216,6 +216,8 @@ class MarlinProc:
         self.clock = time.time()
         self.temp_timer = None
         self.print_timer = None
+        self.hotend_target = 0
+        self.bed_target = 0
         self.sd_selected_filename = None
         self.sd_write_filename = None
         self.files = dict()
@@ -241,7 +243,7 @@ class MarlinProc:
     def _tick(self):
         # todo: add unit test
         # if enough time has passed generate some async output
-        response = b''
+        response = ''
         if self.print_timer and self.print_timer.tick():
             response += 'NORMAL MODE: Percent done: 90; print time remaining in mins: 24\n'
         if self.temp_timer and self.temp_timer.tick():
@@ -328,7 +330,7 @@ class MarlinProc:
 
     def _set_hotend_temperature(self, args):
         try:
-            self.hotend_target = args['S']
+            self.hotend_target = int(args['S'])
             if self.hotend_target > 0:
                 if not self.temp_timer:
                     self.temp_timer = Timer(2)
@@ -336,13 +338,15 @@ class MarlinProc:
                 self.temp_timer = None
         except KeyError:
             raise MarlinError('no temperature')   
-    
+
+        return ""
+
     def _report_temperatures(self, args=None):
         return self._temp_report()
 
     def _set_bed_temperature(self, args):
         try:
-            self.bed_target = args['S']
+            self.bed_target = int(args['S'])
             if self.bed_target > 0:
                 if not self.temp_timer:
                     self.temp_timer = Timer(2)
@@ -350,6 +354,8 @@ class MarlinProc:
                 self.temp_timer = None
         except KeyError:
             raise MarlinError('no temperature')
+
+        return ""
 
     def _firmware_info(self, args):
         return f'FIRMWARE NAME:{self.firmware}\n'
@@ -445,7 +451,6 @@ class MarlinHost(Port):
 
     def write(self, data: bytes):
         return super().write(data)
-
 
 
 def main():

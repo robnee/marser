@@ -1,6 +1,7 @@
 import sys
+import time
 from argparse import ArgumentParser
-from mock import MarlinError, MarlinHost
+from client import MarlinClient
 
 VERSION = 'V1'
 DEFAULT_BAUD = 115200
@@ -23,25 +24,19 @@ def main(argv):
     print(args)
 
     if args.port == 'mock':
-        host = MarlinHost()
+        import mock
+        port = mock.MarlinHost()
     else:
-        # todo: pyserial
         import serial
 
-        host = serial.Serial(args.port, baudrate=args.baud, bytesize=8, timeout=0)
+        port = serial.Serial(args.port, baudrate=args.baud, bytesize=8, timeout=0)
 
-    host.write(b'M31')
-    response = host.read(host.in_waiting)
-    print(response)
-    assert response == b'echo:0 min, 0 sec\nok\n'
+    client = MarlinClient(port)
 
-    host.proc.save_file('abc.gco', b'G0\n')
-    
-    host.reset()
-    host.write(b'M20')
-    response = host.read(host.in_waiting)
-    print(response)
-    assert response == b'Begin file list\nabc.gco 3\nEnd file list\nok\n'
+    client.set_bed_temperature(60)
+    for _ in range(10):
+        time.sleep(1)
+        print(client.readall())
 
 
 if __name__ == "__main__":
