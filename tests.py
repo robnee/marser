@@ -163,6 +163,26 @@ def test_report_sd_print_status(procfile):
     procfile._report_sd_print_status({})
 
 
+def test_set_hotend_temperature(proc):
+    with pytest.raises(MarlinError):
+        proc._set_hotend_temperature({})
+    proc._set_hotend_temperature({'S': '200'})
+    assert proc.temp_timer is not None
+    proc._set_hotend_temperature({'S': '0'})
+    assert proc.temp_timer is None
+
+
+def test_set_bed_temperature(proc):
+    with pytest.raises(MarlinError):
+        proc._set_bed_temperature({})
+    proc._set_bed_temperature({'S': '60'})
+    assert proc.temp_timer is not None
+
+    proc._set_hotend_temperature({'S': '200'})
+    proc._set_bed_temperature({'S': '0'})
+    assert proc.temp_timer is not None
+
+
 def test_report_temperatures(proc):
     assert proc._report_temperatures() == 'T:20 E:0 B:20\n'
 
