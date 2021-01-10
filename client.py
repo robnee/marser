@@ -3,10 +3,24 @@
 class MarlinClient:
     def __init__(self, port):
         self.port = port
+        self.bed_temp = 0
+        self.hotend_temp = 0
+
+    def _parse_report(self, data: bytes):
+        pass
 
     def readall(self):
         # todo: add code to strip out time and temp messages
-        return self.port.read(self.port.in_waiting)
+        read_data = self.port.read(self.port.in_waiting)
+
+        out_data = b''
+        for line in read_data.strip().split(b'\n'):
+            if line.startswith(b'T:'):
+                self._parse_report(line)
+            else:
+                out_data += line + b'\n'
+
+        return out_data
 
     def save_file(self, filename: str, data: bytes):
         self.port.write(f'M28 {filename}\n'.encode())
