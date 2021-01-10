@@ -54,6 +54,12 @@ class MarlinClient:
 
         return response
 
+    def firmware_info(self):
+        self.port.write(f'M115\n'.encode())
+        response = self.readall()
+        
+        return response
+
     def set_hotend_temperature(self, temp: int):
         self.port.write(f'M104 S{temp}\n'.encode())
 
