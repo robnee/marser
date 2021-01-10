@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 import time
 import pytest
 from mock import Buffer, Port, MarlinProc, MarlinError, MarlinHost
@@ -47,8 +49,6 @@ def test_dtr(port):
     assert port.dtr is False
     port.dtr = True
     assert port.dtr is True
-    port.reset()
-    assert port.dtr is False
 
 
 def test_noise(port):
@@ -66,7 +66,7 @@ def test_close(port):
 
 def test_reset(port):
     port.write(b'abc')
-    port.reset()
+    port.reset_output_buffer()
     assert port.outq.value() == b''
 
 
@@ -117,7 +117,7 @@ def test_run(proc):
     assert port.outq.value() == f'Writing to file: {filename}\nok\nDone saving file.\n'.encode()
     assert proc.get_file(filename) == b'G29\n'
 
-    port.reset()
+    port.reset_output_buffer()
     port.inq = Buffer(b'G12345\n')
     proc.run(port)
     assert port.outq.value() == b'Unknown command: G12345\nok\n'
@@ -188,21 +188,27 @@ def test_report_temperatures(proc):
 
 
 def test_host(host):
+    assert host.readline() == b'start\n'
+
+    host.reset_input_buffer()
     host.write(b'M115')
     assert host.in_waiting == 33
     assert host.readline() == b'FIRMWARE NAME:MarlinProc V1.0\n'
     assert host.read(1) == b'o'
 
-    host.reset()
-    host.write(b'M28 xyz.g\n')
+    host.reset_input_buffer()
+    host.write(b'M23 xyz.g\n')
+    assert host.readline() == b'Open failed, File: xyz.g.\n'
+    host.reset_input_buffer()
+    host.write(b'M28\n')
     host.write(b'G29\n')
     host.write(b'M29\n')
     assert host.readline() == b'Writing to file: xyz.g\n'
 
-    host.reset()
+    host.reset_input_buffer()
     host.write(b'M30 xyz.g\n')
     assert host.readline() == b'File deleted:xyz.g\n'
-    host.reset()
+    host.reset_input_buffer()
     host.write(b'M20')
     assert host.readline() == b'Begin file list\n'
     assert host.readline() == b'End file list\n'
@@ -210,7 +216,8 @@ def test_host(host):
 
 def test_client(host):
     filename, data = 'xyz.gco', b'G0\nG1\n'
-    client = MarlinClient(host)
+    client = MarlinClient()
+    client.connect(host)
 
     assert client.firmware_info().startswith(b'FIRMWARE NAME:')
 

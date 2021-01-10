@@ -3,12 +3,12 @@
 """
 Upload a gcode file to a Marlin host and start a print job
 
-Mock Marlin interface for testing.  Implements the serial port protocol that can be wrapped 
+Mock Marlin interface for testing.  Implements the serial port protocol that can be wrapped
 in a Comm object.
 
-Attempting to create a state machine that runs on every call to the serial port read API and 
+Attempting to create a state machine that runs on every call to the serial port read API and
 reads and writes to and from the input and output queue until the state machine blocks on a
-serial read for the next icsp command byte.  At that point the inbound request can be 
+serial read for the next icsp command byte.  At that point the inbound request can be
 satisfied from one of the two queues.
 
 How to do that?  Perhaps this is an example of coroutine programming with yield?  That might simplify the handoff
@@ -17,7 +17,7 @@ goes deeper and deeper.
 
 todo:
     add bed and ex temp commands for preheat
-    
+
 """
 
 import time
@@ -59,14 +59,14 @@ class Buffer:
             ret, self.buf = self.buf[: nl + 1], self.buf[nl + 1:]
 
         return ret
-        
+
     def value(self):
         return self.buf
 
 
 class Port:
     """implements a pySerial serial.Serial object that can be connected to a mock host for
-    simulation and testing.  can be configured to introduce noise into the communications for 
+    simulation and testing.  can be configured to introduce noise into the communications for
     error recovery testing"""
 
     def __init__(self):
@@ -90,10 +90,6 @@ class Port:
         self._dtr = False
         self.reset_input_buffer()
         self.reset_output_buffer()
-
-    def reset(self):
-        """reset the port.  typically overridden by Host"""
-        self._clear()
 
     def get_host_port(self):
         """create a host-side port for the mock to talk to the client"""
@@ -173,7 +169,7 @@ class Timer():
 
     def reset(self):
         self.target = time.time() + self.interval
-    
+
     def expired(self):
         return time.time() > self.target
 
@@ -181,14 +177,14 @@ class Timer():
         if self.expired():
             self.reset()
             return True
-        
+
         return False
 
 
 class MarlinError(Exception):
     pass
-    
-    
+
+
 class MarlinProc:
     """
     ;   Commands:
@@ -253,7 +249,7 @@ class MarlinProc:
 
     def _temp_report(self):
         return 'T:20 E:0 B:20\n'
-        
+
     def _sd_append(self, filename, gcode):
         self.files[filename] += gcode
 
@@ -270,10 +266,10 @@ class MarlinProc:
         except KeyError:
             raise MarlinError('no filename')
 
-        if filename in self.files:
-            self.sd_selected_filename = filename
-        else:
-            raise MarlinError('file not found')
+        self.sd_selected_filename = filename
+
+        if filename not in self.files:
+            raise MarlinError(f'Open failed, File: {filename}.\n')
 
         return ""
 
@@ -296,11 +292,14 @@ class MarlinProc:
     def _start_sd_write(self, args):
         if '@' in args:
             self.sd_write_filename = args['@']
-            self.files[self.sd_write_filename] = b''
+        elif self.sd_selected_filename:
+            self.sd_write_filename = self.sd_selected_filename
         else:
             raise MarlinError('no filename')
 
-        return "Writing to file: " + args['@'] + '\n'
+        self.files[self.sd_write_filename] = b''
+
+        return "Writing to file: " + self.sd_write_filename + '\n'
 
     def _stop_sd_write(self, args=None):
         self.sd_write_filename = None
@@ -337,7 +336,7 @@ class MarlinProc:
             elif self.bed_target <= 0:
                 self.temp_timer = None
         except KeyError:
-            raise MarlinError('no temperature')   
+            raise MarlinError('no temperature')
 
         return ""
 
@@ -425,13 +424,10 @@ class MarlinHost(Port):
     def __init__(self):
         Port.__init__(self)
         self.proc = MarlinProc()
+        self.inq = Buffer(b'start\necho:SD card ok\r\n')
 
     def _run(self):
         self.proc.run(self.get_host_port())
-
-    def reset(self):
-        super().reset()
-        self.proc.reset()
 
     @property
     def in_waiting(self) -> int:

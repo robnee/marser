@@ -1,29 +1,56 @@
 
+import time
+
 
 class MarlinClient:
-    def __init__(self, port):
-        self.port = port
+    def __init__(self):
+        self.port = None
         self.bed_temp = 0
         self.hotend_temp = 0
 
     def _parse_report(self, data: bytes):
         pass
 
-    def readall(self):
-        # todo: add code to strip out time and temp messages
-        read_data = self.port.read(self.port.in_waiting)
+    def connect(self, port):
+        self.port = port
 
+        # look for start
+        self.port.timeout = 2
+        response = self.port.readline()
+        if response != b'start\n':
+            raise RuntimeError(f'start expected: {response}')
+        # self.port.timeout = 0.25
+
+        while response != b'echo:SD card ok\r\n':
+            response = self.port.readline()
+
+        # wait to settle down
+        time.sleep(0.5)
+        port.reset_input_buffer()
+
+    def readall(self):
         out_data = b''
-        for line in read_data.strip().split(b'\n'):
+
+        while True:
+            line = self.port.readline()
             if line.startswith(b'T:'):
                 self._parse_report(line)
             else:
-                out_data += line + b'\n'
+                out_data += line
+
+            if not self.port.in_waiting:
+                break
 
         return out_data
 
     def save_file(self, filename: str, data: bytes):
-        self.port.write(f'M28 {filename}\n'.encode())
+        self.port.write(f'M23 {filename}\n'.encode())
+        response = self.readall()
+        if response not in (f'ok\r\n'.encode(),
+                            f'Open failed, File: {filename}.\n\nok\n'.encode()):
+            raise ValueError(response)
+
+        self.port.write(f'M28\n'.encode())
         response = self.readall()
         if response != f'Writing to file: {filename}\nok\n'.encode():
             raise ValueError(response)
@@ -71,7 +98,7 @@ class MarlinClient:
     def firmware_info(self):
         self.port.write(f'M115\n'.encode())
         response = self.readall()
-        
+
         return response
 
     def set_hotend_temperature(self, temp: int):
