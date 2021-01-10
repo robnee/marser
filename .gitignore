@@ -1,2 +1,6 @@
-/venv/
-/.cache/v/cache/*
+*.GCO
+.idea/
+__pycache__/
+lvenv/
+venv/
+.cache/
