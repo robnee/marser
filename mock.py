@@ -20,6 +20,7 @@ todo:
 
 """
 
+import re
 import time
 import random
 import logging
@@ -228,9 +229,11 @@ class MarlinProc:
 
         args = dict()
         for token in tokens[1:]:
-            reg = token[:1]
-            if reg.isalpha() and reg.isupper():
-                args[reg] = token[1:]
+            # determine if this is a register spec
+            m = re.fullmatch(r'([a-zA-Z])([0-9-.]*)', token)
+            if m:
+                reg, value = m.groups()
+                args[reg] = value
             else:
                 args['@'] = token
 
