@@ -3,13 +3,24 @@ import time
 
 
 class MarlinClient:
+    FILTERS = [
+        b'echo:busy: processing',
+        b'echo:Now fresh file:',
+    ]
+
     def __init__(self):
         self.port = None
         self.bed_temp = 0
         self.hotend_temp = 0
 
-    def _parse_report(self, data: bytes):
-        pass
+    def _process_line(self, line: bytes):
+        line.replace(b'\r', b'')
+        if line.startswith(b'T:'):
+            return
+        elif any(line.startswith(x) for x in self.FILTERS):
+            return
+
+        return line
 
     def connect(self, port):
         self.port = port
@@ -33,21 +44,25 @@ class MarlinClient:
 
         while True:
             line = self.port.readline()
-            if line.startswith(b'T:'):
-                self._parse_report(line)
-            else:
-                out_data += line
+            pline = self._process_line(line)
+            print(f"LINE: {repr(line)} PLINE: {repr(pline)}")
+            if pline:
+                out_data += pline
+            elif line:
+                # if we filtered something then retry
+                continue
 
             if not self.port.in_waiting:
                 break
 
+        print(f'readall: {out_data}')
         return out_data
 
     def save_file(self, filename: str, data: bytes):
+        self.port.reset_input_buffer()
         self.port.write(f'M23 {filename}\n'.encode())
         response = self.readall()
-        if response not in (f'ok\r\n'.encode(),
-                            f'Open failed, File: {filename}.\n\nok\n'.encode()):
+        if response.decode() not in (f'ok\n', f'Open failed, File: {filename}.\n\nok\n'):
             raise ValueError(response)
 
         self.port.write(f'M28\n'.encode())
